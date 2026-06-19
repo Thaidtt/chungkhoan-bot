@@ -41,6 +41,35 @@ def tinh_ho_tro_khang_cu(df, window=20):
     ho_tro = gan_day['low'].astype(float).min()
     return ho_tro, khang_cu
 
+def lay_mua_ban_chu_dong(symbol):
+    """Thu lay du lieu khop lenh trong ngay de tinh mua/ban chu dong"""
+    try:
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        intraday = stock.quote.intraday(symbol=symbol, page_size=5000)
+        if intraday is None or len(intraday) == 0:
+            return None
+
+        # Cot thuong co: time, price, volume, match_type (Buy/Sell) hoac tuong tu
+        cols = intraday.columns.tolist()
+
+        # Thu tim cot phan loai giao dich
+        mua_kl = 0
+        ban_kl = 0
+
+        if 'match_type' in cols:
+            mua_kl = intraday[intraday['match_type'] == 'Buy']['volume'].sum()
+            ban_kl = intraday[intraday['match_type'] == 'Sell']['volume'].sum()
+        elif 'matchType' in cols:
+            mua_kl = intraday[intraday['matchType'] == 'Buy']['volume'].sum()
+            ban_kl = intraday[intraday['matchType'] == 'Sell']['volume'].sum()
+        else:
+            return None
+
+        return mua_kl, ban_kl
+    except Exception as e:
+        print(f"Khong lay duoc mua/ban chu dong cho {symbol}: {e}")
+        return None
+
 def get_vnindex():
     try:
         stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
@@ -64,11 +93,17 @@ def phan_tich_ma(symbol):
             return f"{symbol}: Khong du du lieu de phan tich", None
 
         df['close'] = df['close'].astype(float)
+        df['volume'] = df['volume'].astype(float)
         closes = df['close']
+        volumes = df['volume']
 
         gia_hom_nay = closes.iloc[-1]
         gia_hom_truoc = closes.iloc[-2]
         thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
+
+        kl_hom_nay = volumes.iloc[-1]
+        kl_tb20 = volumes.tail(20).mean()
+        kl_ty_le = (kl_hom_nay / kl_tb20) * 100 if kl_tb20 > 0 else 0
 
         rsi = tinh_rsi(closes).iloc[-1]
         macd_line, signal_line = tinh_macd(closes)
@@ -100,7 +135,9 @@ def phan_tich_ma(symbol):
         elif gia_hom_nay < ma20 and ma20 < ma50:
             ghi_chu.append("Duoi MA20/MA50 - xu huong giam")
 
-        # Kiem tra gan vung ho tro / khang cu (trong pham vi 2%)
+        if kl_ty_le >= 200:
+            ghi_chu.append(f"Khoi luong dot bien ({kl_ty_le:.0f}% TB20)")
+
         khoang_cach_khang_cu = abs(gia_hom_nay - khang_cu) / khang_cu * 100
         khoang_cach_ho_tro = abs(gia_hom_nay - ho_tro) / ho_tro * 100
 
@@ -110,6 +147,17 @@ def phan_tich_ma(symbol):
             canh_bao_gia = f"CANH BAO: {symbol} dang gan vung HO TRO {ho_tro:,.0f}d"
 
         ket_qua = f"{dau} {symbol}: {gia_hom_nay:,.0f}d ({thay_doi:+.2f}%)\n"
+        ket_qua += f"   KL: {kl_hom_nay:,.0f} ({kl_ty_le:.0f}% TB20)\n"
+
+        # Thu lay mua/ban chu dong
+        mua_ban = lay_mua_ban_chu_dong(symbol)
+        if mua_ban:
+            mua_kl, ban_kl = mua_ban
+            tong = mua_kl + ban_kl
+            if tong > 0:
+                pct_mua = (mua_kl / tong) * 100
+                ket_qua += f"   Mua CD: {mua_kl:,.0f} ({pct_mua:.0f}%) | Ban CD: {ban_kl:,.0f} ({100-pct_mua:.0f}%)\n"
+
         ket_qua += f"   RSI: {rsi:.0f} | MA20: {ma20:,.0f} | MA50: {ma50:,.0f}\n"
         ket_qua += f"   Ho tro: {ho_tro:,.0f}d | Khang cu: {khang_cu:,.0f}d\n"
         ket_qua += f"   {', '.join(ghi_chu)}"
