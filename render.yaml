@@ -1,4 +1,3 @@
-yaml
 services:
   - type: cron
     name: chungkhoan-bot
