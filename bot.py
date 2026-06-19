@@ -35,6 +35,12 @@ def tinh_macd(closes):
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
     return macd_line, signal_line
 
+def tinh_ho_tro_khang_cu(df, window=20):
+    gan_day = df.tail(window)
+    khang_cu = gan_day['high'].astype(float).max()
+    ho_tro = gan_day['low'].astype(float).min()
+    return ho_tro, khang_cu
+
 def get_vnindex():
     try:
         stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
@@ -55,7 +61,7 @@ def phan_tich_ma(symbol):
         df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
 
         if df is None or len(df) < 30:
-            return f"{symbol}: Khong du du lieu de phan tich"
+            return f"{symbol}: Khong du du lieu de phan tich", None
 
         df['close'] = df['close'].astype(float)
         closes = df['close']
@@ -72,9 +78,13 @@ def phan_tich_ma(symbol):
         ma20 = closes.rolling(window=20).mean().iloc[-1]
         ma50 = closes.rolling(window=50).mean().iloc[-1]
 
+        ho_tro, khang_cu = tinh_ho_tro_khang_cu(df, window=20)
+
         dau = "UP" if thay_doi >= 0 else "DOWN"
 
         ghi_chu = []
+        canh_bao_gia = None
+
         if rsi > 70:
             ghi_chu.append("RSI qua mua")
         elif rsi < 30:
@@ -85,19 +95,29 @@ def phan_tich_ma(symbol):
         else:
             ghi_chu.append("MACD tieu cuc")
 
-        if gia_hom_nay > ma20 > ma50:
+        if gia_hom_nay > ma20 and ma20 > ma50:
             ghi_chu.append("Tren MA20/MA50 - xu huong tang")
-        elif gia_hom_nay < ma20 < ma50:
+        elif gia_hom_nay < ma20 and ma20 < ma50:
             ghi_chu.append("Duoi MA20/MA50 - xu huong giam")
+
+        # Kiem tra gan vung ho tro / khang cu (trong pham vi 2%)
+        khoang_cach_khang_cu = abs(gia_hom_nay - khang_cu) / khang_cu * 100
+        khoang_cach_ho_tro = abs(gia_hom_nay - ho_tro) / ho_tro * 100
+
+        if khoang_cach_khang_cu <= 2:
+            canh_bao_gia = f"CANH BAO: {symbol} dang gan vung KHANG CU {khang_cu:,.0f}d"
+        elif khoang_cach_ho_tro <= 2:
+            canh_bao_gia = f"CANH BAO: {symbol} dang gan vung HO TRO {ho_tro:,.0f}d"
 
         ket_qua = f"{dau} {symbol}: {gia_hom_nay:,.0f}d ({thay_doi:+.2f}%)\n"
         ket_qua += f"   RSI: {rsi:.0f} | MA20: {ma20:,.0f} | MA50: {ma50:,.0f}\n"
+        ket_qua += f"   Ho tro: {ho_tro:,.0f}d | Khang cu: {khang_cu:,.0f}d\n"
         ket_qua += f"   {', '.join(ghi_chu)}"
 
-        return ket_qua
+        return ket_qua, canh_bao_gia
 
     except Exception as e:
-        return f"{symbol}: Loi phan tich ({str(e)[:40]})"
+        return f"{symbol}: Loi phan tich ({str(e)[:40]})", None
 
 def main():
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
@@ -105,8 +125,17 @@ def main():
     message = f"BAO CAO DANH MUC - {now}\n\n"
     message += get_vnindex() + "\n\n"
 
+    danh_sach_canh_bao = []
+
     for symbol in WATCHLIST:
-        message += phan_tich_ma(symbol) + "\n\n"
+        ket_qua, canh_bao = phan_tich_ma(symbol)
+        message += ket_qua + "\n\n"
+        if canh_bao:
+            danh_sach_canh_bao.append(canh_bao)
+
+    if danh_sach_canh_bao:
+        message += "=== CANH BAO QUAN TRONG ===\n"
+        message += "\n".join(danh_sach_canh_bao)
 
     send_message(message)
 
