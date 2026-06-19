@@ -1,7 +1,9 @@
 import os
 import requests
+import pandas as pd
 from datetime import datetime
 from vnstock import Vnstock
+import ta
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -17,36 +19,83 @@ def send_message(text):
     except Exception as e:
         print("Loi gui tin:", e)
 
-def get_stock_report():
-    lines = []
-    canh_bao = []
-    for symbol in WATCHLIST:
-        try:
-            stock = Vnstock().stock(symbol=symbol, source='VCI')
-            df = stock.quote.history(start='2026-01-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
-            if df is None or len(df) < 2:
-                lines.append(f"{symbol}: Khong co du lieu")
-                continue
-            gia_hom_nay = df.iloc[-1]['close']
-            gia_hom_truoc = df.iloc[-2]['close']
-            thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
-            dau = "UP" if thay_doi >= 0 else "DOWN"
-            lines.append(f"{dau} {symbol}: {gia_hom_nay:,.0f}d ({thay_doi:+.2f}%)")
-            if abs(thay_doi) >= 3:
-                canh_bao.append(f"CANH BAO {symbol}: {thay_doi:+.2f}%")
-        except Exception as e:
-            lines.append(f"{symbol}: Loi ({str(e)[:30]})")
-    return lines, canh_bao
+def get_vnindex():
+    try:
+        stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
+        df = stock.quote.history(start='2026-01-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
+        if df is None or len(df) < 2:
+            return "VN-Index: Khong co du lieu"
+        gia_hom_nay = df.iloc[-1]['close']
+        gia_hom_truoc = df.iloc[-2]['close']
+        thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
+        dau = "UP" if thay_doi >= 0 else "DOWN"
+        return f"{dau} VN-Index: {gia_hom_nay:,.2f} ({thay_doi:+.2f}%)"
+    except Exception as e:
+        return f"VN-Index: Loi ({str(e)[:30]})"
+
+def phan_tich_ma(symbol):
+    try:
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
+
+        if df is None or len(df) < 30:
+            return f"{symbol}: Khong du du lieu de phan tich"
+
+        df['close'] = df['close'].astype(float)
+
+        # Gia hien tai
+        gia_hom_nay = df.iloc[-1]['close']
+        gia_hom_truoc = df.iloc[-2]['close']
+        thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
+
+        # RSI
+        rsi = ta.momentum.RSIIndicator(df['close'], window=14).rsi().iloc[-1]
+
+        # MACD
+        macd_obj = ta.trend.MACD(df['close'])
+        macd_line = macd_obj.macd().iloc[-1]
+        macd_signal = macd_obj.macd_signal().iloc[-1]
+
+        # MA
+        ma20 = df['close'].rolling(window=20).mean().iloc[-1]
+        ma50 = df['close'].rolling(window=50).mean().iloc[-1]
+
+        dau = "UP" if thay_doi >= 0 else "DOWN"
+
+        # Danh gia trang thai
+        ghi_chu = []
+        if rsi > 70:
+            ghi_chu.append("RSI qua mua")
+        elif rsi < 30:
+            ghi_chu.append("RSI qua ban")
+
+        if macd_line > macd_signal:
+            ghi_chu.append("MACD tich cuc")
+        else:
+            ghi_chu.append("MACD tieu cuc")
+
+        if gia_hom_nay > ma20 > ma50:
+            ghi_chu.append("Tren MA20/MA50 - xu huong tang")
+        elif gia_hom_nay < ma20 < ma50:
+            ghi_chu.append("Duoi MA20/MA50 - xu huong giam")
+
+        ket_qua = f"{dau} {symbol}: {gia_hom_nay:,.0f}d ({thay_doi:+.2f}%)\n"
+        ket_qua += f"   RSI: {rsi:.0f} | MA20: {ma20:,.0f} | MA50: {ma50:,.0f}\n"
+        ket_qua += f"   {', '.join(ghi_chu)}"
+
+        return ket_qua
+
+    except Exception as e:
+        return f"{symbol}: Loi phan tich ({str(e)[:40]})"
 
 def main():
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
-    lines, canh_bao = get_stock_report()
 
     message = f"BAO CAO DANH MUC - {now}\n\n"
-    message += "\n".join(lines)
+    message += get_vnindex() + "\n\n"
 
-    if canh_bao:
-        message += "\n\nCANH BAO:\n" + "\n".join(canh_bao)
+    for symbol in WATCHLIST:
+        message += phan_tich_ma(symbol) + "\n\n"
 
     send_message(message)
 
