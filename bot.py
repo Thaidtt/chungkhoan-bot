@@ -3,7 +3,6 @@ import requests
 import pandas as pd
 from datetime import datetime
 from vnstock import Vnstock
-import ta
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -18,6 +17,23 @@ def send_message(text):
         print("Da gui:", response.status_code)
     except Exception as e:
         print("Loi gui tin:", e)
+
+def tinh_rsi(closes, window=14):
+    delta = closes.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def tinh_macd(closes):
+    ema12 = closes.ewm(span=12, adjust=False).mean()
+    ema26 = closes.ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    return macd_line, signal_line
 
 def get_vnindex():
     try:
@@ -42,34 +58,29 @@ def phan_tich_ma(symbol):
             return f"{symbol}: Khong du du lieu de phan tich"
 
         df['close'] = df['close'].astype(float)
+        closes = df['close']
 
-        # Gia hien tai
-        gia_hom_nay = df.iloc[-1]['close']
-        gia_hom_truoc = df.iloc[-2]['close']
+        gia_hom_nay = closes.iloc[-1]
+        gia_hom_truoc = closes.iloc[-2]
         thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
 
-        # RSI
-        rsi = ta.momentum.RSIIndicator(df['close'], window=14).rsi().iloc[-1]
+        rsi = tinh_rsi(closes).iloc[-1]
+        macd_line, signal_line = tinh_macd(closes)
+        macd_val = macd_line.iloc[-1]
+        signal_val = signal_line.iloc[-1]
 
-        # MACD
-        macd_obj = ta.trend.MACD(df['close'])
-        macd_line = macd_obj.macd().iloc[-1]
-        macd_signal = macd_obj.macd_signal().iloc[-1]
-
-        # MA
-        ma20 = df['close'].rolling(window=20).mean().iloc[-1]
-        ma50 = df['close'].rolling(window=50).mean().iloc[-1]
+        ma20 = closes.rolling(window=20).mean().iloc[-1]
+        ma50 = closes.rolling(window=50).mean().iloc[-1]
 
         dau = "UP" if thay_doi >= 0 else "DOWN"
 
-        # Danh gia trang thai
         ghi_chu = []
         if rsi > 70:
             ghi_chu.append("RSI qua mua")
         elif rsi < 30:
             ghi_chu.append("RSI qua ban")
 
-        if macd_line > macd_signal:
+        if macd_val > signal_val:
             ghi_chu.append("MACD tich cuc")
         else:
             ghi_chu.append("MACD tieu cuc")
