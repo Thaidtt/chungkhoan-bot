@@ -1,31 +1,18 @@
 import os
 import requests
-import pandas as pd
 import time
+import pandas as pd
 from datetime import datetime
 from vnstock import Vnstock
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-NGUONG_THANH_KHOAN = 50000
-
-DANH_SACH_QUET = [
-    "VCB","ACB","CTG",
-    "FPT","MWG",
-    "SCS","GMD",
-    "GAS","BSR","PVT","NT2",
-    "DPG","HHV","PC1","KSB",
-    "IDC","SZC",
-    "VNM","QNS","VHC",
-    "HSG",
-    "SSI","HCM","FTS",
-    "DHG","DBD",
-    "BVH","PVI",
-    "TNG",
-    "DPR",
-    "VOS",
-    "BMP"
+WATCHLIST = [
+    "VCB","ACB","CTG","FPT","MWG","SCS","GMD","GAS","BSR","PVT",
+    # "NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
+    # "HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
+    "VOS","BMP"
 ]
 
 def send_message(text):
@@ -70,117 +57,89 @@ def tinh_ho_tro_khang_cu(df, window=20):
 
 def quyet_dinh(rsi, macd_tich_cuc, tren_ma, gan_ho_tro, gan_khang_cu):
     if rsi < 30 and macd_tich_cuc and gan_ho_tro:
-        return "MUA"
+        return "MUA", "RSI qua ban + MACD tich cuc + gan ho tro -> co hoi vao tot"
     if rsi > 70 and not macd_tich_cuc and gan_khang_cu:
-        return "BAN"
+        return "BAN", "RSI qua mua + MACD tieu cuc + gan khang cu -> nen chot loi"
     if tren_ma and macd_tich_cuc and 40 <= rsi <= 65:
-        return "GIU/MUA THEM"
+        return "GIU/MUA THEM", "Tren MA20/MA50, MACD tich cuc, RSI an toan -> xu huong tang"
     if not tren_ma and not macd_tich_cuc:
-        return "TRANH"
+        return "TRANH", "Duoi MA20/MA50, MACD tieu cuc -> xu huong giam"
     if gan_ho_tro and macd_tich_cuc:
-        return "CAN NHAC MUA"
+        return "CAN NHAC MUA", "Gan ho tro, MACD dang tich cuc -> theo doi sat"
     if gan_khang_cu and not macd_tich_cuc:
-        return "CAN NHAC BAN"
-    return "QUAN SAT"
+        return "CAN NHAC BAN", "Gan khang cu, MACD yeu -> rui ro dieu chinh"
+    return "QUAN SAT", "Tin hieu chua ro rang"
 
-def quet_ma(symbol, so_lan_thu=2):
-    for lan in range(so_lan_thu):
-        try:
-            stock = Vnstock().stock(symbol=symbol, source='VCI')
-            df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
+def get_vnindex():
+    try:
+        stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
+        df = stock.quote.history(start='2026-01-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
+        if df is None or len(df) < 2:
+            return "VN-Index: Khong co du lieu"
+        gia_hom_nay = df.iloc[-1]['close']
+        gia_hom_truoc = df.iloc[-2]['close']
+        thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
+        dau = "UP" if thay_doi >= 0 else "DOWN"
+        return f"{dau} VN-Index: {gia_hom_nay:,.2f} ({thay_doi:+.2f}%)"
+    except Exception as e:
+        return f"VN-Index: Loi ({str(e)[:30]})"
 
-            if df is None or len(df) < 30:
-                return None
+def phan_tich_ma(symbol):
+    try:
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
 
-            df['close'] = df['close'].astype(float)
-            df['volume'] = df['volume'].astype(float)
-            closes = df['close']
-            volumes = df['volume']
+        if df is None or len(df) < 30:
+            return f"{symbol}: Khong du du lieu de phan tich"
 
-            kl_tb20 = volumes.tail(20).mean()
-            if kl_tb20 < NGUONG_THANH_KHOAN:
-                return {"symbol": symbol, "loai_tk": True}
+        df['close'] = df['close'].astype(float)
+        closes = df['close']
 
-            gia_hom_truoc = closes.iloc[-2]
-            gia_dong_cua_truoc = closes.iloc[-1]
+        gia_hom_truoc = closes.iloc[-2]
+        gia_dong_cua_truoc = closes.iloc[-1]
 
-            la_rt = False
-            gia_hien_tai = gia_dong_cua_truoc
-            gia_so_sanh = gia_hom_truoc
-            thay_doi = ((gia_hien_tai - gia_so_sanh) / gia_so_sanh) * 100
+        gia_rt = lay_gia_realtime(symbol)
+        la_rt = gia_rt is not None
+        gia_hien_tai = gia_rt if la_rt else gia_dong_cua_truoc
+        gia_so_sanh = gia_dong_cua_truoc if la_rt else gia_hom_truoc
+        thay_doi = ((gia_hien_tai - gia_so_sanh) / gia_so_sanh) * 100
 
-            rsi = tinh_rsi(closes).iloc[-1]
-            macd_line, signal_line = tinh_macd(closes)
-            macd_tc = macd_line.iloc[-1] > signal_line.iloc[-1]
+        rsi = tinh_rsi(closes).iloc[-1]
+        macd_line, signal_line = tinh_macd(closes)
+        macd_tc = macd_line.iloc[-1] > signal_line.iloc[-1]
 
-            ma20 = closes.rolling(window=20).mean().iloc[-1]
-            ma50 = closes.rolling(window=50).mean().iloc[-1]
-            tren_ma = gia_hien_tai > ma20 and ma20 > ma50
+        ma20 = closes.rolling(window=20).mean().iloc[-1]
+        ma50 = closes.rolling(window=50).mean().iloc[-1]
+        tren_ma = gia_hien_tai > ma20 and ma20 > ma50
 
-            ho_tro, khang_cu = tinh_ho_tro_khang_cu(df)
-            gan_ht = abs(gia_hien_tai - ho_tro) / ho_tro * 100 <= 3
-            gan_kc = abs(gia_hien_tai - khang_cu) / khang_cu * 100 <= 3
+        ho_tro, khang_cu = tinh_ho_tro_khang_cu(df)
+        gan_ht = abs(gia_hien_tai - ho_tro) / ho_tro * 100 <= 3
+        gan_kc = abs(gia_hien_tai - khang_cu) / khang_cu * 100 <= 3
 
-            hanh_dong = quyet_dinh(rsi, macd_tc, tren_ma, gan_ht, gan_kc)
+        hanh_dong, ly_do = quyet_dinh(rsi, macd_tc, tren_ma, gan_ht, gan_kc)
 
-            kl_ty_le = (volumes.iloc[-1] / kl_tb20) * 100 if kl_tb20 > 0 else 0
+        dau = "UP" if thay_doi >= 0 else "DOWN"
+        nhan_gia = "(realtime)" if la_rt else "(dong cua)"
 
-            return {
-                "symbol": symbol, "loai_tk": False, "gia": gia_hien_tai,
-                "thay_doi": thay_doi, "rsi": rsi, "hanh_dong": hanh_dong,
-                "kl_ty_le": kl_ty_le, "la_rt": la_rt,
-                "ho_tro": ho_tro, "khang_cu": khang_cu
-            }
-        except Exception as e:
-            if "60" in str(e) or "limit" in str(e).lower():
-                time.sleep(65)
-                continue
-            return None
-    return None
+        stoploss = ho_tro * 0.97 if hanh_dong in ["MUA", "CAN NHAC MUA", "GIU/MUA THEM"] else khang_cu * 1.03
+
+        ket_qua = f"=== {symbol} {nhan_gia}: {gia_hien_tai:,.0f}d ({thay_doi:+.2f}%) ===\n"
+        ket_qua += f">>> {hanh_dong} <<<  ({ly_do})\n"
+        ket_qua += f"RSI:{rsi:.0f} MACD:{'tot' if macd_tc else 'xau'} HT:{ho_tro:,.0f}d KC:{khang_cu:,.0f}d SL:{stoploss:,.0f}d"
+
+        return ket_qua
+
+    except Exception as e:
+        return f"{symbol}: Loi phan tich ({str(e)[:40]})"
 
 def main():
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
-    ket_qua = []
-    bi_loai = []
+    message = f"BAO CAO QUYET DINH - {now}\n\n"
+    message += get_vnindex() + "\n\n"
 
-    for i, symbol in enumerate(DANH_SACH_QUET):
-        r = quet_ma(symbol)
-        if r:
-            if r.get("loai_tk"):
-                bi_loai.append(symbol)
-            else:
-                ket_qua.append(r)
-        time.sleep(1.3)
-
-    if not ket_qua:
-        send_message(f"QUET DANH MUC - {now}\n\nKhong lay duoc du lieu.")
-        return
-
-    df_kq = pd.DataFrame(ket_qua)
-    co_rt = df_kq['la_rt'].any()
-    nhan = "(co gia realtime)" if co_rt else "(gia dong cua gan nhat)"
-
-    message = f"QUET DANH MUC CHAT LUONG {nhan} - {now}\n"
-    message += f"(Quet {len(ket_qua)}/{len(DANH_SACH_QUET)} ma)\n\n"
-
-    # Nhom theo hanh dong
-    for nhom in ["MUA", "CAN NHAC MUA", "GIU/MUA THEM", "CAN NHAC BAN", "BAN", "TRANH", "QUAN SAT"]:
-        df_nhom = df_kq[df_kq["hanh_dong"] == nhom]
-        if len(df_nhom) > 0:
-            message += f"=== {nhom} ({len(df_nhom)}) ===\n"
-            for _, row in df_nhom.iterrows():
-                message += f"{row['symbol']}: {row['gia']:,.0f}d ({row['thay_doi']:+.2f}%) RSI:{row['rsi']:.0f}\n"
-            message += "\n"
-
-    dot_bien = df_kq[df_kq["kl_ty_le"] >= 200]
-    if len(dot_bien) > 0:
-        message += "=== KHOI LUONG DOT BIEN ===\n"
-        for _, row in dot_bien.iterrows():
-            message += f"{row['symbol']}: KL {row['kl_ty_le']:.0f}% TB20\n"
-        message += "\n"
-
-    if bi_loai:
-        message += f"Loai do thanh khoan: {', '.join(bi_loai)}"
+    for symbol in WATCHLIST:
+        message += phan_tich_ma(symbol) + "\n\n"
+        time.sleep(1.2)
 
     send_message(message)
 
