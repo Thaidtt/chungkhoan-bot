@@ -39,8 +39,10 @@ def lay_mua_ban_chu_dong(symbol):
         stock = Vnstock().stock(symbol=symbol, source='VCI')
         intraday = stock.quote.intraday(symbol=symbol, page_size=5000)
         if intraday is None or len(intraday) == 0:
+            print(f"{symbol}: intraday rong hoac None")
             return None
         cols = intraday.columns.tolist()
+        print(f"{symbol}: cac cot intraday: {cols}")
         mua_kl = 0
         ban_kl = 0
         if 'match_type' in cols:
