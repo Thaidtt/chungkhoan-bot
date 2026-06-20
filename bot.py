@@ -8,26 +8,40 @@ from vnstock import Vnstock
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-NGUONG_THANH_KHOAN = 50000  # co phieu/ngay
-
 DANH_SACH_QUET = [
-    "VCB","ACB","CTG","MBB","HDB","BID","TCB",
-    "FPT","MWG","PNJ","FRT",
-    "SCS","GMD","HAH","VSC",
-    "GAS","BSR","PVT","NT2","PVS","REE","POW",
-    "DPG","HHV","PC1","KSB","LCG",
-    "IDC","SZC","HDC","NLG",
-    "VNM","QNS","VHC","DBC",
-    "HSG","HPG","NKG",
-    "SSI","HCM","FTS","VCI",
-    "DHG","DBD","IMP",
+    # Ngan hang
+    "VCB","ACB","CTG",
+    # Cong nghe - Ban le
+    "FPT","MWG",
+    # Ha tang - Cang
+    "SCS","GMD",
+    # Nang luong - Dau khi
+    "GAS","BSR","PVT","NT2",
+    # Xay dung - Dau tu cong
+    "DPG","HHV","PC1","KSB",
+    # Bat dong san
+    "IDC","SZC",
+    # Tieu dung - Thuc pham
+    "VNM","QNS","VHC",
+    # Vat lieu - Hoa chat
+    "HSG",
+    # Chung khoan
+    "SSI","HCM","FTS",
+    # Duoc pham
+    "DHG","DBD",
+    # Bao hiem
     "BVH","PVI",
-    "TNG","MSH","TCM",
-    "DPR","PHR",
+    # Det may
+    "TNG",
+    # Cao su
+    "DPR",
+    # Van tai bien
     "VOS",
-    "CMG","BMP","VCS",
-    "FMC"
+    # Cong nghe khac
+    "BMP"
 ]
+
+NGUONG_THANH_KHOAN = 50000
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -38,57 +52,70 @@ def send_message(text):
     except Exception as e:
         print("Loi gui tin:", e)
 
-def quet_ma(symbol):
-    try:
-        stock = Vnstock().stock(symbol=symbol, source='VCI')
-        df = stock.quote.history(start='2026-04-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
+def quet_ma(symbol, so_lan_thu=3):
+    for lan in range(so_lan_thu):
+        try:
+            stock = Vnstock().stock(symbol=symbol, source='VCI')
+            df = stock.quote.history(start='2026-04-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
 
-        if df is None or len(df) < 21:
-            return None
+            if df is None or len(df) < 21:
+                return None
 
-        df['close'] = df['close'].astype(float)
-        df['volume'] = df['volume'].astype(float)
-        closes = df['close']
-        volumes = df['volume']
+            df['close'] = df['close'].astype(float)
+            df['volume'] = df['volume'].astype(float)
+            closes = df['close']
+            volumes = df['volume']
 
-        gia_hom_nay = closes.iloc[-1]
-        gia_hom_truoc = closes.iloc[-2]
-        thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
+            gia_hom_nay = closes.iloc[-1]
+            gia_hom_truoc = closes.iloc[-2]
+            thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
 
-        kl_tb20 = volumes.tail(20).mean()
+            kl_tb20 = volumes.tail(20).mean()
 
-        # Loc thanh khoan ngay tai day
-        if kl_tb20 < NGUONG_THANH_KHOAN:
-            return {"symbol": symbol, "loai_thanh_khoan": True, "kl_tb20": kl_tb20}
+            if kl_tb20 < NGUONG_THANH_KHOAN:
+                return {"symbol": symbol, "loai_thanh_khoan": True, "kl_tb20": kl_tb20}
 
-        kl_hom_nay = volumes.iloc[-1]
-        kl_ty_le = (kl_hom_nay / kl_tb20) * 100 if kl_tb20 > 0 else 0
+            kl_hom_nay = volumes.iloc[-1]
+            kl_ty_le = (kl_hom_nay / kl_tb20) * 100 if kl_tb20 > 0 else 0
 
-        return {
-            "symbol": symbol,
-            "gia": gia_hom_nay,
-            "thay_doi": thay_doi,
-            "kl_ty_le": kl_ty_le,
-            "kl_tb20": kl_tb20,
-            "loai_thanh_khoan": False
-        }
-    except Exception as e:
-        print(f"Loi quet {symbol}: {e}")
-        return None
+            return {
+                "symbol": symbol,
+                "gia": gia_hom_nay,
+                "thay_doi": thay_doi,
+                "kl_ty_le": kl_ty_le,
+                "kl_tb20": kl_tb20,
+                "loai_thanh_khoan": False
+            }
+        except Exception as e:
+            loi_str = str(e)
+            if "rate" in loi_str.lower() or "60" in loi_str or "limit" in loi_str.lower():
+                print(f"{symbol}: Rate limit, cho 65 giay roi thu lai (lan {lan+1}/{so_lan_thu})")
+                time.sleep(65)
+                continue
+            else:
+                print(f"Loi quet {symbol}: {e}")
+                return None
+    print(f"{symbol}: Bo qua sau {so_lan_thu} lan thu")
+    return None
 
 def main():
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
     ket_qua = []
     bi_loai = []
 
-    for symbol in DANH_SACH_QUET:
+    for i, symbol in enumerate(DANH_SACH_QUET):
         r = quet_ma(symbol)
         if r:
             if r.get("loai_thanh_khoan"):
-                bi_loai.append(f"{r['symbol']} (KL TB20: {r['kl_tb20']:,.0f})")
+                bi_loai.append(r['symbol'])
             else:
                 ket_qua.append(r)
-        time.sleep(1.2) # Tranh vuot rate limit
+
+        # Nghi 1.5s giua moi ma, nghi them sau moi 40 ma de tranh cham rate limit
+        time.sleep(1.5)
+        if (i + 1) % 40 == 0:
+            print(f"Da quet {i+1} ma, nghi 30s de bao toan rate limit...")
+            time.sleep(30)
 
     if not ket_qua:
         send_message(f"QUET DANH MUC CHAT LUONG - {now}\n\nKhong lay duoc du lieu.")
@@ -117,8 +144,8 @@ def main():
             message += f"{row['symbol']}: KL {row['kl_ty_le']:.0f}% TB20, gia {row['thay_doi']:+.2f}%\n"
 
     if bi_loai:
-        message += f"\n=== LOAI DO THANH KHOAN THAP (<{NGUONG_THANH_KHOAN:,}cp/ngay) ===\n"
-        message += ", ".join([b.split(" (")[0] for b in bi_loai])
+        message += f"\n=== LOAI DO THANH KHOAN THAP ===\n"
+        message += ", ".join(bi_loai)
 
     send_message(message)
 
