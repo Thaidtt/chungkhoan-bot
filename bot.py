@@ -35,18 +35,6 @@ def lay_gia_realtime(symbol):
     except Exception:
         return None
 
-def lay_khoi_ngoai(symbol):
-    try:
-        stock = Vnstock().stock(symbol=symbol, source='VCI')
-        df = stock.trading.foreign_trade(symbol=symbol)
-        if df is None or len(df) == 0:
-            return None
-        row = df.iloc[-1]
-        return row.to_dict()
-    except Exception as e:
-        print(f"Loi lay khoi ngoai {symbol}: {e}")
-        return None
-
 def tinh_rsi(closes, window=14):
     delta = closes.diff()
     gain = delta.where(delta > 0, 0)
@@ -141,10 +129,6 @@ def phan_tich_ma(symbol):
         ket_qua = f"=== {symbol} {nhan_gia}: {gia_hien_tai:,.0f}d ({thay_doi:+.2f}%) ===\n"
         ket_qua += f">>> {hanh_dong} <<< ({ly_do})\n"
         ket_qua += f"KL: {kl_hom_nay:,.0f} ({kl_ty_le:.0f}% TB20)\n"
-
-        kn = lay_khoi_ngoai(symbol)
-        if kn:
-            ket_qua += f"KhoiNgoai: {kn}\n"
 
         ket_qua += f"RSI:{rsi:.0f} MACD:{'tot' if macd_tc else 'xau'} HT:{ho_tro:,.0f}d KC:{khang_cu:,.0f}d SL:{stoploss:,.0f}d"
         return ket_qua
