@@ -53,7 +53,7 @@ def tinh_macd(closes):
 
 def tinh_ho_tro_khang_cu(df, window=20):
     gan_day = df.tail(window)
-    return gan_day['low'].astype(float).min(), gan_day['high'].astype(float).max()
+    return gan_day['low'].astype(float).min() * 1000, gan_day['high'].astype(float).max() * 1000
 
 def quyet_dinh(rsi, macd_tich_cuc, tren_ma, gan_ho_tro, gan_khang_cu):
     if rsi < 30 and macd_tich_cuc and gan_ho_tro:
@@ -95,8 +95,8 @@ def phan_tich_ma(symbol):
         df['close'] = df['close'].astype(float)
         closes = df['close']
 
-        gia_hom_truoc = closes.iloc[-2]
-        gia_dong_cua_truoc = closes.iloc[-1]
+        gia_hom_truoc = closes.iloc[-2] * 1000
+        gia_dong_cua_truoc = closes.iloc[-1] * 1000
 
         gia_rt = lay_gia_realtime(symbol)
         la_rt = gia_rt is not None
