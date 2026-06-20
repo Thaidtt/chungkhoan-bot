@@ -3,7 +3,8 @@ import requests
 import time
 import pandas as pd
 from datetime import datetime
-from vnstock import Vnstock, Screener
+from vnstock import Vnstock
+import vnstock as vnstock_module
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -185,6 +186,7 @@ def phan_tich_ma(symbol, df_screener):
         return f"{symbol}: Loi phan tich ({str(e)[:40]})"
 
 def main():
+    print("Cac thuoc tinh co san trong vnstock:", [x for x in dir(vnstock_module) if not x.startswith('_')])
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
     message = f"BAO CAO QUYET DINH - {now}\n\n"
     message += get_vnindex() + "\n\n"
