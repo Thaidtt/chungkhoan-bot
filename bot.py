@@ -4,15 +4,14 @@ import time
 import pandas as pd
 from datetime import datetime
 from vnstock import Vnstock
-import vnstock as vnstock_module
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 WATCHLIST = [
     "VCB","ACB","CTG","FPT","MWG","SCS","GMD","GAS","BSR","PVT",
-    #"NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
-    #"HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
+    "NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
+    "HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
     "VOS","BMP"
 ]
 
@@ -36,14 +35,16 @@ def lay_gia_realtime(symbol):
     except Exception:
         return None
 
-def lay_du_lieu_screener_toanbo():
-    """Goi 1 lan duy nhat, lay du lieu khoi ngoai + mua/ban chu dong cho TOAN BO thi truong"""
+def lay_khoi_ngoai(symbol):
     try:
-        screener = Screener()
-        df = screener.stock(params={"exchangeName": "HOSE,HNX,UPCOM"}, limit=1700)
-        return df
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        df = stock.trading.foreign_trade(symbol=symbol)
+        if df is None or len(df) == 0:
+            return None
+        row = df.iloc[-1]
+        return row.to_dict()
     except Exception as e:
-        print(f"Loi lay screener: {e}")
+        print(f"Loi lay khoi ngoai {symbol}: {e}")
         return None
 
 def tinh_rsi(closes, window=14):
@@ -68,18 +69,18 @@ def tinh_ho_tro_khang_cu(df, window=20):
 
 def quyet_dinh(rsi, macd_tich_cuc, tren_ma, gan_ho_tro, gan_khang_cu):
     if rsi < 30 and macd_tich_cuc and gan_ho_tro:
-        return "MUA", "RSI qua ban + MACD tich cuc + gan ho tro -> co hoi vao tot"
+        return "MUA", "RSI qua ban + MACD tich cuc + gan ho tro"
     if rsi > 70 and not macd_tich_cuc and gan_khang_cu:
-        return "BAN", "RSI qua mua + MACD tieu cuc + gan khang cu -> nen chot loi"
+        return "BAN", "RSI qua mua + MACD tieu cuc + gan khang cu"
     if tren_ma and macd_tich_cuc and 40 <= rsi <= 65:
-        return "GIU/MUA THEM", "Tren MA20/MA50, MACD tich cuc, RSI an toan -> xu huong tang"
+        return "GIU/MUA THEM", "Tren MA20/MA50, MACD tot, RSI an toan"
     if not tren_ma and not macd_tich_cuc:
-        return "TRANH", "Duoi MA20/MA50, MACD tieu cuc -> xu huong giam"
+        return "TRANH", "Duoi MA20/MA50, MACD xau"
     if gan_ho_tro and macd_tich_cuc:
-        return "CAN NHAC MUA", "Gan ho tro, MACD dang tich cuc -> theo doi sat"
+        return "CAN NHAC MUA", "Gan ho tro, MACD dang tot"
     if gan_khang_cu and not macd_tich_cuc:
-        return "CAN NHAC BAN", "Gan khang cu, MACD yeu -> rui ro dieu chinh"
-    return "QUAN SAT", "Tin hieu chua ro rang"
+        return "CAN NHAC BAN", "Gan khang cu, MACD yeu"
+    return "QUAN SAT", "Tin hieu chua ro"
 
 def get_vnindex():
     try:
@@ -95,25 +96,13 @@ def get_vnindex():
     except Exception as e:
         return f"VN-Index: Loi ({str(e)[:30]})"
 
-def lay_thong_tin_screener(symbol, df_screener):
-    """Tra cuu trong bo nho, khong goi API lai"""
-    if df_screener is None:
-        return None
-    try:
-        row = df_screener[df_screener['ticker'] == symbol]
-        if len(row) == 0:
-            return None
-        return row.iloc[0]
-    except Exception:
-        return None
-
-def phan_tich_ma(symbol, df_screener):
+def phan_tich_ma(symbol):
     try:
         stock = Vnstock().stock(symbol=symbol, source='VCI')
         df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
 
         if df is None or len(df) < 30:
-            return f"{symbol}: Khong du du lieu de phan tich"
+            return f"{symbol}: Khong du du lieu"
 
         df['close'] = df['close'].astype(float)
         df['volume'] = df['volume'].astype(float)
@@ -126,10 +115,8 @@ def phan_tich_ma(symbol, df_screener):
         gia_rt = lay_gia_realtime(symbol)
         la_rt = gia_rt is not None
         gia_hien_tai = gia_rt if la_rt else gia_dong_cua_gan_nhat
-        gia_so_sanh = gia_phien_truoc
-        thay_doi = ((gia_hien_tai - gia_so_sanh) / gia_so_sanh) * 100
+        thay_doi = ((gia_hien_tai - gia_phien_truoc) / gia_phien_truoc) * 100
 
-        # Khoi luong
         kl_hom_nay = volumes.iloc[-1]
         kl_tb20 = volumes.tail(20).mean()
         kl_ty_le = (kl_hom_nay / kl_tb20) * 100 if kl_tb20 > 0 else 0
@@ -147,57 +134,31 @@ def phan_tich_ma(symbol, df_screener):
         gan_kc = abs(gia_hien_tai - khang_cu) / khang_cu * 100 <= 3
 
         hanh_dong, ly_do = quyet_dinh(rsi, macd_tc, tren_ma, gan_ht, gan_kc)
-
         dau = "UP" if thay_doi >= 0 else "DOWN"
         nhan_gia = "(realtime)" if la_rt else "(dong cua)"
-
-        stoploss = ho_tro * 0.97 if hanh_dong in ["MUA", "CAN NHAC MUA", "GIU/MUA THEM"] else khang_cu * 1.03
+        stoploss = ho_tro * 0.97 if hanh_dong in ["MUA","CAN NHAC MUA","GIU/MUA THEM"] else khang_cu * 1.03
 
         ket_qua = f"=== {symbol} {nhan_gia}: {gia_hien_tai:,.0f}d ({thay_doi:+.2f}%) ===\n"
-        ket_qua += f">>> {hanh_dong} <<<  ({ly_do})\n"
+        ket_qua += f">>> {hanh_dong} <<< ({ly_do})\n"
         ket_qua += f"KL: {kl_hom_nay:,.0f} ({kl_ty_le:.0f}% TB20)\n"
 
-        # Mua/ban chu dong + khoi ngoai tu screener
-        row = lay_thong_tin_screener(symbol, df_screener)
-        if row is not None:
-            try:
-                mua_manh = row.get('strong_buy_percentage', None)
-                mua_tich_cuc = row.get('active_buy_percentage', None)
-                kn_giao_dich = row.get('foreign_transaction', None)
-                kn_rong_20p = row.get('foreign_buy_sell_20_session', None)
-
-                if mua_manh is not None and mua_tich_cuc is not None:
-                    ket_qua += f"Mua manh: {mua_manh:.0f}% | Mua tich cuc: {mua_tich_cuc:.0f}%\n"
-
-                if kn_giao_dich is not None:
-                    nhan_kn = {"buyMoreThanSell": "Mua > Ban", "sellMoreThanBuy": "Ban > Mua"}.get(kn_giao_dich, "Khong dang ke")
-                    kn_str = f"Khoi ngoai hom nay: {nhan_kn}"
-                    if kn_rong_20p is not None:
-                        kn_str += f" | Rong 20 phien: {kn_rong_20p:+.1f} ty"
-                    ket_qua += kn_str + "\n"
-            except Exception as e:
-                print(f"Loi doc screener {symbol}: {e}")
+        kn = lay_khoi_ngoai(symbol)
+        if kn:
+            ket_qua += f"KhoiNgoai: {kn}\n"
 
         ket_qua += f"RSI:{rsi:.0f} MACD:{'tot' if macd_tc else 'xau'} HT:{ho_tro:,.0f}d KC:{khang_cu:,.0f}d SL:{stoploss:,.0f}d"
-
         return ket_qua
 
     except Exception as e:
-        return f"{symbol}: Loi phan tich ({str(e)[:40]})"
+        return f"{symbol}: Loi ({str(e)[:50]})"
 
 def main():
-    print("Cac thuoc tinh co san trong vnstock:", [x for x in dir(vnstock_module) if not x.startswith('_')])
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
     message = f"BAO CAO QUYET DINH - {now}\n\n"
     message += get_vnindex() + "\n\n"
 
-    # Goi screener 1 LAN DUY NHAT cho toan bo thi truong
-    print("Dang lay du lieu screener toan thi truong...")
-    df_screener = lay_du_lieu_screener_toanbo()
-    print(f"Da lay xong, co {len(df_screener) if df_screener is not None else 0} ma")
-
     for symbol in WATCHLIST:
-        message += phan_tich_ma(symbol, df_screener) + "\n\n"
+        message += phan_tich_ma(symbol) + "\n\n"
         time.sleep(1.2)
 
     send_message(message)
