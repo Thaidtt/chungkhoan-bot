@@ -104,10 +104,9 @@ def quet_ma(symbol, so_lan_thu=2):
             gia_hom_truoc = closes.iloc[-2]
             gia_dong_cua_truoc = closes.iloc[-1]
 
-            gia_rt = lay_gia_realtime(symbol)
-            la_rt = gia_rt is not None
-            gia_hien_tai = gia_rt if la_rt else gia_dong_cua_truoc
-            gia_so_sanh = gia_dong_cua_truoc if la_rt else gia_hom_truoc
+            la_rt = False
+            gia_hien_tai = gia_dong_cua_truoc
+            gia_so_sanh = gia_hom_truoc
             thay_doi = ((gia_hien_tai - gia_so_sanh) / gia_so_sanh) * 100
 
             rsi = tinh_rsi(closes).iloc[-1]
