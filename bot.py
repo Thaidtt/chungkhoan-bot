@@ -101,6 +101,7 @@ def phan_tich_ma(symbol):
         la_rt = gia_rt is not None
         gia_hien_tai = gia_rt if la_rt else gia_dong_cua_hom_qua
         gia_so_sanh = gia_dong_cua_hom_qua
+        print(f"DEBUG {symbol}: gia_rt={gia_rt}, gia_dong_cua_hom_qua={gia_dong_cua_hom_qua}, closes.iloc[-2]={closes.iloc[-2]*1000}")
         thay_doi = ((gia_hien_tai - gia_so_sanh) / gia_so_sanh) * 100
 
         rsi = tinh_rsi(closes).iloc[-1]
