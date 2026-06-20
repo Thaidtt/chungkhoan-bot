@@ -88,7 +88,7 @@ def main():
                 bi_loai.append(f"{r['symbol']} (KL TB20: {r['kl_tb20']:,.0f})")
             else:
                 ket_qua.append(r)
-        time.sleep(0.5)
+        time.sleep(1.2) # Tranh vuot rate limit
 
     if not ket_qua:
         send_message(f"QUET DANH MUC CHAT LUONG - {now}\n\nKhong lay duoc du lieu.")
