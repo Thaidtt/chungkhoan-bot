@@ -14,7 +14,6 @@ WATCHLIST = [
     #"HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
     "VOS","BMP"
 ]
-
 def send_message(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": text}
@@ -33,6 +32,28 @@ def lay_gia_realtime(symbol):
             return float(gia)
         return None
     except Exception:
+        return None
+
+def lay_mua_ban_chu_dong(symbol):
+    try:
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        intraday = stock.quote.intraday(symbol=symbol, page_size=5000)
+        if intraday is None or len(intraday) == 0:
+            return None
+        cols = intraday.columns.tolist()
+        mua_kl = 0
+        ban_kl = 0
+        if 'match_type' in cols:
+            mua_kl = intraday[intraday['match_type'] == 'Buy']['volume'].sum()
+            ban_kl = intraday[intraday['match_type'] == 'Sell']['volume'].sum()
+        elif 'matchType' in cols:
+            mua_kl = intraday[intraday['matchType'] == 'Buy']['volume'].sum()
+            ban_kl = intraday[intraday['matchType'] == 'Sell']['volume'].sum()
+        else:
+            return None
+        return mua_kl, ban_kl
+    except Exception as e:
+        print(f"Khong lay duoc mua/ban chu dong {symbol}: {e}")
         return None
 
 def tinh_rsi(closes, window=14):
@@ -57,9 +78,9 @@ def tinh_ho_tro_khang_cu(df, window=20):
 
 def quyet_dinh(rsi, macd_tich_cuc, tren_ma, gan_ho_tro, gan_khang_cu):
     if rsi < 30 and macd_tich_cuc and gan_ho_tro:
-        return "MUA", "RSI qua ban + MACD tich cuc + gan ho tro"
+        return "MUA", "RSI qua ban + MACD tot + gan ho tro"
     if rsi > 70 and not macd_tich_cuc and gan_khang_cu:
-        return "BAN", "RSI qua mua + MACD tieu cuc + gan khang cu"
+        return "BAN", "RSI qua mua + MACD xau + gan khang cu"
     if tren_ma and macd_tich_cuc and 40 <= rsi <= 65:
         return "GIU/MUA THEM", "Tren MA20/MA50, MACD tot, RSI an toan"
     if not tren_ma and not macd_tich_cuc:
@@ -130,6 +151,14 @@ def phan_tich_ma(symbol):
         ket_qua += f">>> {hanh_dong} <<< ({ly_do})\n"
         ket_qua += f"KL: {kl_hom_nay:,.0f} ({kl_ty_le:.0f}% TB20)\n"
 
+        mua_ban = lay_mua_ban_chu_dong(symbol)
+        if mua_ban:
+            mua_kl, ban_kl = mua_ban
+            tong = mua_kl + ban_kl
+            if tong > 0:
+                pct_mua = (mua_kl / tong) * 100
+                ket_qua += f"Mua CD: {mua_kl:,.0f} ({pct_mua:.0f}%) | Ban CD: {ban_kl:,.0f} ({100-pct_mua:.0f}%)\n"
+
         ket_qua += f"RSI:{rsi:.0f} MACD:{'tot' if macd_tc else 'xau'} HT:{ho_tro:,.0f}d KC:{khang_cu:,.0f}d SL:{stoploss:,.0f}d"
         return ket_qua
 
@@ -143,7 +172,7 @@ def main():
 
     for symbol in WATCHLIST:
         message += phan_tich_ma(symbol) + "\n\n"
-        time.sleep(1.2)
+        time.sleep(2.5)
 
     send_message(message)
 
