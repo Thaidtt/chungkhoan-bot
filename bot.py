@@ -3,7 +3,7 @@ import requests
 import time
 import pandas as pd
 from datetime import datetime
-from vnstock import Vnstock
+from vnstock import Vnstock, Screener
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -38,8 +38,8 @@ def lay_gia_realtime(symbol):
 def lay_du_lieu_screener_toanbo():
     """Goi 1 lan duy nhat, lay du lieu khoi ngoai + mua/ban chu dong cho TOAN BO thi truong"""
     try:
-        stock = Vnstock().stock(symbol='ACB', source='VCI')
-        df = stock.screener.stock(params={"exchangeName": "HOSE,HNX,UPCOM"}, limit=1700)
+        screener = Screener()
+        df = screener.stock(params={"exchangeName": "HOSE,HNX,UPCOM"}, limit=1700)
         return df
     except Exception as e:
         print(f"Loi lay screener: {e}")
