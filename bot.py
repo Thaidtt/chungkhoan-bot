@@ -9,9 +9,9 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 WATCHLIST = [
-    "VCB","ACB","CTG","FPT",#"MWG","SCS","GMD","GAS","BSR","PVT",
-    #"NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
-    #"HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
+    "VCB","ACB","CTG","FPT","MWG","SCS","GMD","GAS","BSR","PVT",
+    "NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
+    "HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
     "VOS","BMP"
 ]
 def send_message(text):
