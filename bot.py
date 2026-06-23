@@ -10,10 +10,26 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 WATCHLIST = [
     "VCB","ACB","CTG","FPT","MWG","SCS","GMD","GAS","BSR","PVT",
-    "NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
-    "HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
+    #"NT2","DPG","HHV","PC1","KSB","IDC","SZC","VNM","QNS","VHC",
+    #"HSG","SSI","HCM","FTS","DHG","DBD","BVH","PVI","TNG","DPR",
     "VOS","BMP"
 ]
+
+NGANH = {
+    "VCB":"Ngan hang","ACB":"Ngan hang","CTG":"Ngan hang",
+    "FPT":"Cong nghe","MWG":"Ban le",
+    "GMD":"Cang-Logistics","SCS":"Cang-Logistics",
+    "GAS":"Nang luong","PVT":"Nang luong","NT2":"Nang luong","BSR":"Nang luong",
+    "DPG":"Xay dung","HHV":"Xay dung","PC1":"Xay dung","KSB":"Xay dung",
+    "IDC":"BDS KCN","SZC":"BDS KCN",
+    "VNM":"Tieu dung","QNS":"Tieu dung","VHC":"Tieu dung",
+    "HSG":"Vat lieu",
+    "SSI":"Chung khoan","HCM":"Chung khoan","FTS":"Chung khoan",
+    "DHG":"Duoc pham","DBD":"Duoc pham",
+    "BVH":"Bao hiem","PVI":"Bao hiem",
+    "TNG":"Det may","DPR":"Cao su","VOS":"Van tai bien","BMP":"Vat lieu"
+}
+
 def send_message(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": text}
@@ -39,10 +55,8 @@ def lay_mua_ban_chu_dong(symbol):
         stock = Vnstock().stock(symbol=symbol, source='VCI')
         intraday = stock.quote.intraday(symbol=symbol, page_size=5000)
         if intraday is None or len(intraday) == 0:
-            print(f"{symbol}: intraday rong hoac None")
             return None
         cols = intraday.columns.tolist()
-        print(f"{symbol}: cac cot intraday: {cols}")
         mua_kl = 0
         ban_kl = 0
         if 'match_type' in cols:
@@ -93,19 +107,49 @@ def quyet_dinh(rsi, macd_tich_cuc, tren_ma, gan_ho_tro, gan_khang_cu):
         return "CAN NHAC BAN", "Gan khang cu, MACD yeu"
     return "QUAN SAT", "Tin hieu chua ro"
 
-def get_vnindex():
+def get_tong_quan_thi_truong():
+    """Lay VN-Index, thanh khoan, va tinh ngan dan dat tu watchlist"""
     try:
         stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
         df = stock.quote.history(start='2026-01-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
         if df is None or len(df) < 2:
-            return "VN-Index: Khong co du lieu"
+            return "VN-Index: Khong co du lieu", []
+
         gia_hom_nay = df.iloc[-1]['close']
         gia_hom_truoc = df.iloc[-2]['close']
         thay_doi = ((gia_hom_nay - gia_hom_truoc) / gia_hom_truoc) * 100
         dau = "UP" if thay_doi >= 0 else "DOWN"
-        return f"{dau} VN-Index: {gia_hom_nay:,.2f} ({thay_doi:+.2f}%)"
+
+        thanh_khoan = df.iloc[-1]['volume']
+        thanh_khoan_tb20 = df['volume'].tail(20).mean()
+        tk_ty_le = (thanh_khoan / thanh_khoan_tb20) * 100 if thanh_khoan_tb20 > 0 else 0
+
+        ket_qua = f"{dau} VN-Index: {gia_hom_nay:,.2f} ({thay_doi:+.2f}%)\n"
+        ket_qua += f"Thanh khoan: {thanh_khoan:,.0f} ({tk_ty_le:.0f}% TB20)"
+
+        return ket_qua, None
     except Exception as e:
-        return f"VN-Index: Loi ({str(e)[:30]})"
+        return f"VN-Index: Loi ({str(e)[:30]})", None
+
+def tinh_nganh_dan_dat(ket_qua_ca_phieu):
+    """Tinh % thay doi trung binh theo nganh tu danh sach da phan tich"""
+    nganh_data = {}
+    for symbol, thay_doi in ket_qua_ca_phieu.items():
+        nganh = NGANH.get(symbol, "Khac")
+        if nganh not in nganh_data:
+            nganh_data[nganh] = []
+        nganh_data[nganh].append(thay_doi)
+
+    nganh_avg = {n: sum(v)/len(v) for n, v in nganh_data.items()}
+    nganh_sorted = sorted(nganh_avg.items(), key=lambda x: x[1], reverse=True)
+
+    text = "Nganh dan dat (theo danh muc theo doi):\n"
+    for nganh, avg in nganh_sorted[:3]:
+        text += f"  UP {nganh}: {avg:+.2f}%\n"
+    text += "Nganh yeu nhat:\n"
+    for nganh, avg in nganh_sorted[-2:]:
+        text += f"  DOWN {nganh}: {avg:+.2f}%\n"
+    return text
 
 def phan_tich_ma(symbol):
     try:
@@ -113,7 +157,7 @@ def phan_tich_ma(symbol):
         df = stock.quote.history(start='2025-09-01', end=datetime.now().strftime('%Y-%m-%d'), interval='1D')
 
         if df is None or len(df) < 30:
-            return f"{symbol}: Khong du du lieu"
+            return f"{symbol}: Khong du du lieu", None
 
         df['close'] = df['close'].astype(float)
         df['volume'] = df['volume'].astype(float)
@@ -162,19 +206,35 @@ def phan_tich_ma(symbol):
                 ket_qua += f"Mua CD: {mua_kl:,.0f} ({pct_mua:.0f}%) | Ban CD: {ban_kl:,.0f} ({100-pct_mua:.0f}%)\n"
 
         ket_qua += f"RSI:{rsi:.0f} MACD:{'tot' if macd_tc else 'xau'} HT:{ho_tro:,.0f}d KC:{khang_cu:,.0f}d SL:{stoploss:,.0f}d"
-        return ket_qua
+        return ket_qua, thay_doi
 
     except Exception as e:
-        return f"{symbol}: Loi ({str(e)[:50]})"
+        return f"{symbol}: Loi ({str(e)[:50]})", None
 
 def main():
     now = datetime.now().strftime("%H:%M %d/%m/%Y")
-    message = f"BAO CAO QUYET DINH - {now}\n\n"
-    message += get_vnindex() + "\n\n"
+    message = f"BAO CAO THI TRUONG - {now}\n\n"
+
+    tong_quan, _ = get_tong_quan_thi_truong()
+    message += "=== TONG QUAN THI TRUONG ===\n"
+    message += tong_quan + "\n\n"
+
+    chi_tiet_ca_phieu = ""
+    ket_qua_thay_doi = {}
 
     for symbol in WATCHLIST:
-        message += phan_tich_ma(symbol) + "\n\n"
-        time.sleep(2.5)
+        ket_qua, thay_doi = phan_tich_ma(symbol)
+        chi_tiet_ca_phieu += ket_qua + "\n\n"
+        if thay_doi is not None:
+            ket_qua_thay_doi[symbol] = thay_doi
+        time.sleep(3.5)
+
+    if ket_qua_thay_doi:
+        message += "=== NGANH DAN DAT ===\n"
+        message += tinh_nganh_dan_dat(ket_qua_thay_doi) + "\n"
+
+    message += "\n=== CHI TIET DANH MUC ===\n\n"
+    message += chi_tiet_ca_phieu
 
     send_message(message)
 
